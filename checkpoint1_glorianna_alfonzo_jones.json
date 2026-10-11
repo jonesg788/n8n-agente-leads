@@ -39,18 +39,18 @@
         "model": {
           "__rl": true,
           "mode": "list",
-          "value": "claude-sonnet-5-5",
-          "cachedResultName": "Claude Sonnet 5.5"
+          "value": "gpt-4o",
+          "cachedResultName": "gpt-4o"
         },
         "options": {
-          "maxTokensToSample": 1024,
+          "maxTokens": 1024,
           "temperature": 0.2
         }
       },
       "id": "b1a1c0de-0003-4a1b-9c01-000000000003",
-      "name": "Anthropic Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
       "position": [
         180,
         240
@@ -246,7 +246,7 @@
     },
     {
       "parameters": {
-        "content": "## Checkpoint 1 · Agente base (Sowe)\n**Rol:** Asistente de Calificación de Leads.\n\n- **Trigger:** Chat Trigger.\n- **Cerebro:** AI Agent en modo *Tools Agent*. Guardrail: **Max Iterations = 5** (Options).\n- **Modelo:** Anthropic Chat Model (temperatura 0.2).\n- **Tool lateral:** Google Sheets, que agrega el lead a la hoja `Leads`.\n- **Observabilidad:** Gmail envía el Execution Log (`intermediateSteps`) a supervisión humana.",
+        "content": "## Checkpoint 1 · Agente base (Sowe)\n**Rol:** Asistente de Calificación de Leads.\n\n- **Trigger:** Chat Trigger.\n- **Cerebro:** AI Agent en modo *Tools Agent*. Guardrail: **Max Iterations = 5** (Options).\n- **Modelo:** OpenAI Chat Model GPT-4o (temperatura 0.2).\n- **Tool lateral:** Google Sheets, que agrega el lead a la hoja `Leads`.\n- **Observabilidad:** Gmail envía el Execution Log (`intermediateSteps`) a supervisión humana.",
         "height": 300,
         "width": 420,
         "color": 4
@@ -273,7 +273,7 @@
         ]
       ]
     },
-    "Anthropic Chat Model": {
+    "OpenAI Chat Model": {
       "ai_languageModel": [
         [
           {
