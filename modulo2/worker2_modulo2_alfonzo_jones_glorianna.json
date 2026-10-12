@@ -1,0 +1,282 @@
+{
+  "name": "M2 - Worker 2 - Redactar Email de Seguimiento",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Worker 2 · Redactar Email de Seguimiento\n**Tarea atómica:** redactar el asunto y el cuerpo del email de seguimiento. Queda como **borrador** para revisión humana, no se envía.\n\n**Entrada (contrato mínimo):** id_solicitud, nombre, empresa, necesidad, calificacion, resumen. *No recibe email ni teléfono porque no los necesita.*\n\n**Salida:** `{\"status\":\"success\",\"worker\":\"W2_redactar_email\",\"data\":{\"asunto\",\"cuerpo\"}}`.\n\n**Contingencia:** `{\"status\":\"error\",...}`. **Timeout:** 60 s. **Modelo:** gpt-4o-mini.",
+        "height": 380,
+        "width": 380,
+        "color": 5
+      },
+      "id": "3b3d2951-3cb6-48bb-a9d5-657ce50e026c",
+      "name": "Nota 0be3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "id_solicitud",
+              "type": "string"
+            },
+            {
+              "name": "nombre",
+              "type": "string"
+            },
+            {
+              "name": "empresa",
+              "type": "string"
+            },
+            {
+              "name": "necesidad",
+              "type": "string"
+            },
+            {
+              "name": "calificacion",
+              "type": "string"
+            },
+            {
+              "name": "resumen",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "a9d89184-b866-4645-88f2-17f3472bae8e",
+      "name": "Entrada W2 (Execute Workflow Trigger)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3a4d99e6-d6f4-47f7-b388-c1bfd42c7e7a",
+              "leftValue": "={{ !!($json.nombre ?? '').trim() && !!($json.necesidad ?? '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "e42371a4-fc92-4c22-bd1e-1fc1e70d2549",
+      "name": "¿Datos mínimos recibidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Datos para el email:\n- Nombre: {{ $json.nombre }}\n- Empresa: {{ $json.empresa }}\n- Necesidad: {{ $json.necesidad }}\n- Resumen del caso: {{ $json.resumen }}\n- Calificación (uso interno, no mencionar): {{ $json.calificacion }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Eres el Worker 2 de Sowe, especialista en redacción de emails comerciales de seguimiento. Tu única tarea es redactar el asunto y el cuerpo de un email para un cliente potencial que acaba de contactar a Sowe (consultoría de software y automatizaciones). El email queda como borrador para que un consultor lo revise antes de enviarlo.\nReglas:\n- Trato de \"usted\", tono profesional y cordial. Máximo 150 palabras en el cuerpo.\n- Menciona su empresa y su necesidad concreta.\n- Adapta el cierre a la calificación: \"Caliente\" propone coordinar una reunión de diagnóstico en los próximos días; \"Tibio\" ofrece enviar más información y casos de uso; \"Frío\" invita a mantener el contacto cuando el proyecto avance.\n- NO incluyas precios, presupuestos, plazos de entrega ni promesas de resultados. NO inventes clientes, casos ni datos de Sowe.\n- NO menciones la calificación ni el puntaje en el email.\n- Firma: \"Equipo Comercial de Sowe\".\n- Usa español estándar: no utilices formas de lenguaje inclusivo (marcas como \"@\", \"x\" o \"e\" para el género, ni desdoblamientos del tipo \"los/las\")."
+            }
+          ]
+        }
+      },
+      "id": "a3d3959e-3c23-45aa-865f-f2750eed844f",
+      "name": "Redactar Email (LLM)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        460,
+        -100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 1024
+        }
+      },
+      "id": "568b188e-5048-4b24-93b1-f4ddf876bf27",
+      "name": "OpenAI Chat Model (gpt-4o-mini)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"asunto\": \"Sowe | Próximos pasos para automatizar su carga de pedidos\",\n  \"cuerpo\": \"Estimado Martín:\\n\\nGracias por contactar a Sowe...\"\n}"
+      },
+      "id": "8e9e0e44-64a4-479e-86ea-d98a0311510d",
+      "name": "Structured Output Parser W2",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"success\",\n  \"worker\": \"W2_redactar_email\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W2 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"data\": {\n    \"asunto\": {{ JSON.stringify($json.output.asunto) }},\n    \"cuerpo\": {{ JSON.stringify($json.output.cuerpo) }},\n    \"estado_envio\": \"BORRADOR_PENDIENTE_REVISION_HUMANA\"\n  }\n}",
+        "options": {}
+      },
+      "id": "bebdad18-f0e6-4161-9a37-a55dc3fce063",
+      "name": "Salida W2 - Contrato JSON (success)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        820,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"error\",\n  \"worker\": \"W2_redactar_email\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W2 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"error_code\": \"LLM_ERROR\",\n  \"message\": {{ JSON.stringify('Falló la redacción con el modelo: ' + ($json.error?.message ?? $json.error ?? 'error desconocido')) }},\n  \"data\": null\n}",
+        "options": {}
+      },
+      "id": "e3a31187-561e-4694-9c9d-c65ebce920bc",
+      "name": "Contingencia W2 - Error de redacción (LLM)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        820,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"error\",\n  \"worker\": \"W2_redactar_email\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W2 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"error_code\": \"DATOS_INSUFICIENTES\",\n  \"message\": {{ JSON.stringify('Faltan nombre o necesidad para redactar el email.') }},\n  \"data\": null\n}",
+        "options": {}
+      },
+      "id": "54eea331-5a54-4eb4-943c-63f91dc8fee1",
+      "name": "Contingencia W2 - Datos insuficientes",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada W2 (Execute Workflow Trigger)": {
+      "main": [
+        [
+          {
+            "node": "¿Datos mínimos recibidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Datos mínimos recibidos?": {
+      "main": [
+        [
+          {
+            "node": "Redactar Email (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contingencia W2 - Datos insuficientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar Email (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Salida W2 - Contrato JSON (success)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contingencia W2 - Error de redacción (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (gpt-4o-mini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redactar Email (LLM)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser W2": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Redactar Email (LLM)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

@@ -1,0 +1,558 @@
+{
+  "name": "M2 - Worker 1 - Calificar y Registrar Lead",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Worker 1 · Calificar y Registrar Lead\n**Tarea atómica:** validar los datos, calcular el puntaje (0-100) y registrar el lead en Google Sheets.\n\n**Entrada (contrato):** id_solicitud, nombre, empresa, email, telefono, necesidad, presupuesto, plazo, rol_decision.\n\n**Salida:** `{\"status\":\"success\",\"worker\":\"W1_calificar_registrar_lead\",\"data\":{...}}`.\n\n**Contingencia:** ante cualquier fallo devuelve `{\"status\":\"error\",\"error_code\":...}`, así el Manager nunca queda bloqueado.\n\n**Timeout:** 60 s (Settings del workflow). **Modelo:** gpt-4o-mini, por costo.",
+        "height": 400,
+        "width": 380,
+        "color": 5
+      },
+      "id": "edb37329-2bab-4c5f-abad-f456903c4ce0",
+      "name": "Nota 0bc0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "id_solicitud",
+              "type": "string"
+            },
+            {
+              "name": "nombre",
+              "type": "string"
+            },
+            {
+              "name": "empresa",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            },
+            {
+              "name": "telefono",
+              "type": "string"
+            },
+            {
+              "name": "necesidad",
+              "type": "string"
+            },
+            {
+              "name": "presupuesto",
+              "type": "string"
+            },
+            {
+              "name": "plazo",
+              "type": "string"
+            },
+            {
+              "name": "rol_decision",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "b0f21425-cbef-4927-a491-510702929c4f",
+      "name": "Entrada W1 (Execute Workflow Trigger)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fd2efb90-b812-4d9e-bca9-aa83d79ffe96",
+              "leftValue": "={{ /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test($json.email ?? '') && !!($json.nombre ?? '').trim() && !!($json.empresa ?? '').trim() && !!($json.necesidad ?? '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "99e8ab02-8fb8-4b8d-8aec-b77459aa70ea",
+      "name": "¿Datos obligatorios válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Datos del lead:\n- Nombre: {{ $json.nombre }}\n- Empresa: {{ $json.empresa }}\n- Necesidad: {{ $json.necesidad }}\n- Presupuesto: {{ $json.presupuesto }}\n- Plazo: {{ $json.plazo }}\n- Rol en la decisión: {{ $json.rol_decision }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Eres el Worker 1 de Sowe, especialista en calificación de leads. Recibes datos ya extraídos de un cliente potencial y tu única tarea es asignar los puntajes según estos criterios, sin inventar información:\n- puntaje_necesidad (0-30): 30 si la necesidad es clara y coincide con un servicio de Sowe (desarrollo de software a medida, automatización e integraciones, agentes de IA, consultoría tecnológica); 15 si es general o exploratoria; 0 si no coincide.\n- puntaje_presupuesto (0-25): 25 si informa un presupuesto definido; 10 si está en evaluación; 0 si es \"No informado\" o no tiene presupuesto.\n- puntaje_plazo (0-25): 25 si necesita la solución en menos de 3 meses; 15 entre 3 y 6 meses; 5 si es más de 6 meses, sin plazo o \"No informado\".\n- puntaje_autoridad (0-20): 20 si decide la compra; 10 si influye; 0 si no participa o \"No informado\".\n- necesidad_categoria: una de \"Desarrollo de software\", \"Automatizacion\", \"Agente de IA\", \"Consultoria\" u \"Otro\".\n- resumen: una o dos oraciones con la necesidad y el contexto relevante para el consultor.\n- justificacion: una oración que explique los puntajes.\nUsa español estándar: no utilices formas de lenguaje inclusivo (marcas como \"@\", \"x\" o \"e\" para el género, ni desdoblamientos del tipo \"los/las\")."
+            }
+          ]
+        }
+      },
+      "id": "ab783499-e144-476e-8bbf-7c6aef88dbd7",
+      "name": "Calificar Lead (LLM)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        460,
+        -100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 1024
+        }
+      },
+      "id": "37be0b21-c216-4978-b6ea-9edc0124851b",
+      "name": "OpenAI Chat Model (gpt-4o-mini)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"necesidad_categoria\": \"Automatizacion\",\n  \"puntaje_necesidad\": 30,\n  \"puntaje_presupuesto\": 25,\n  \"puntaje_plazo\": 25,\n  \"puntaje_autoridad\": 20,\n  \"justificacion\": \"Necesidad clara, presupuesto aprobado, plazo menor a 3 meses y decide la compra.\",\n  \"resumen\": \"Automatizar la carga de pedidos entre su ERP y Google Sheets.\"\n}"
+      },
+      "id": "17e999d4-a16e-412c-882b-74694e84c775",
+      "name": "Structured Output Parser W1",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1e61405a-53d6-4919-a208-4f612cdc9093",
+              "name": "puntaje",
+              "value": "={{ $json.output.puntaje_necesidad + $json.output.puntaje_presupuesto + $json.output.puntaje_plazo + $json.output.puntaje_autoridad }}",
+              "type": "number"
+            },
+            {
+              "id": "d8632f86-7287-4841-a5ff-6c044ff16b85",
+              "name": "calificacion",
+              "value": "={{ (() => { const p = $json.output.puntaje_necesidad + $json.output.puntaje_presupuesto + $json.output.puntaje_plazo + $json.output.puntaje_autoridad; return p >= 70 ? 'Caliente' : p >= 40 ? 'Tibio' : 'Frío'; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "22b68254-fff7-471e-bec3-6fc681f54cc6",
+              "name": "necesidad_categoria",
+              "value": "={{ $json.output.necesidad_categoria }}",
+              "type": "string"
+            },
+            {
+              "id": "b41a9494-0bf0-4197-9f3b-62fe40c51afc",
+              "name": "resumen",
+              "value": "={{ $json.output.resumen }}",
+              "type": "string"
+            },
+            {
+              "id": "34955b7c-8ba2-47b3-abb9-0f1b6d47d0f9",
+              "name": "justificacion",
+              "value": "={{ $json.output.justificacion }}",
+              "type": "string"
+            },
+            {
+              "id": "d5af0532-39de-4ec2-95c5-79e53de93bdb",
+              "name": "desglose",
+              "value": "={{ { necesidad: $json.output.puntaje_necesidad, presupuesto: $json.output.puntaje_presupuesto, plazo: $json.output.puntaje_plazo, autoridad: $json.output.puntaje_autoridad } }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1acbebce-0771-4e38-b895-871bb13199b4",
+      "name": "Calcular Puntaje y Calificación",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        820,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+            "Nombre": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.nombre }}",
+            "Empresa": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.empresa }}",
+            "Email": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.email }}",
+            "Telefono": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.telefono }}",
+            "Necesidad": "={{ $json.necesidad_categoria }}",
+            "Presupuesto": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.presupuesto }}",
+            "Plazo": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.plazo }}",
+            "Rol_Decision": "={{ $('Entrada W1 (Execute Workflow Trigger)').first().json.rol_decision }}",
+            "Puntaje": "={{ $json.puntaje }}",
+            "Calificacion": "={{ $json.calificacion }}",
+            "Resumen": "={{ $json.resumen }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha",
+              "displayName": "Fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nombre",
+              "displayName": "Nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Empresa",
+              "displayName": "Empresa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Telefono",
+              "displayName": "Telefono",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Necesidad",
+              "displayName": "Necesidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Presupuesto",
+              "displayName": "Presupuesto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Plazo",
+              "displayName": "Plazo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Rol_Decision",
+              "displayName": "Rol_Decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Puntaje",
+              "displayName": "Puntaje",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Calificacion",
+              "displayName": "Calificacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resumen",
+              "displayName": "Resumen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "06f2fe5d-fde9-42d5-ad53-e641ad37ef56",
+      "name": "Registrar Lead en Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        -120
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"success\",\n  \"worker\": \"W1_calificar_registrar_lead\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W1 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"data\": {\n    \"puntaje\": {{ $('Calcular Puntaje y Calificación').first().json.puntaje }},\n    \"calificacion\": {{ JSON.stringify($('Calcular Puntaje y Calificación').first().json.calificacion) }},\n    \"necesidad_categoria\": {{ JSON.stringify($('Calcular Puntaje y Calificación').first().json.necesidad_categoria) }},\n    \"desglose\": {{ JSON.stringify($('Calcular Puntaje y Calificación').first().json.desglose) }},\n    \"resumen\": {{ JSON.stringify($('Calcular Puntaje y Calificación').first().json.resumen) }},\n    \"registrado_en\": \"Google Sheets / Leads\"\n  }\n}",
+        "options": {}
+      },
+      "id": "3348fbf5-4895-4951-8ab5-4cf34524fa45",
+      "name": "Salida W1 - Contrato JSON (success)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"error\",\n  \"worker\": \"W1_calificar_registrar_lead\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W1 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"error_code\": \"SHEETS_ERROR\",\n  \"message\": {{ JSON.stringify('No se pudo registrar el lead en Google Sheets: ' + ($json.error?.message ?? $json.error ?? 'error desconocido')) }},\n  \"data\": null\n}",
+        "options": {}
+      },
+      "id": "3ce48ac7-6196-4469-a338-7aa84ffd2005",
+      "name": "Contingencia W1 - Error de Google Sheets",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"error\",\n  \"worker\": \"W1_calificar_registrar_lead\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W1 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"error_code\": \"LLM_ERROR\",\n  \"message\": {{ JSON.stringify('Falló la calificación con el modelo: ' + ($json.error?.message ?? $json.error ?? 'error desconocido')) }},\n  \"data\": null\n}",
+        "options": {}
+      },
+      "id": "acd5db95-e957-4f2b-a55d-2c57a2bfa054",
+      "name": "Contingencia W1 - Error de calificación (LLM)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        820,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"status\": \"error\",\n  \"worker\": \"W1_calificar_registrar_lead\",\n  \"id_solicitud\": {{ JSON.stringify($('Entrada W1 (Execute Workflow Trigger)').first().json.id_solicitud ?? '') }},\n  \"error_code\": \"DATOS_INVALIDOS\",\n  \"message\": {{ JSON.stringify('Faltan datos obligatorios o el email no tiene formato válido.') }},\n  \"data\": null\n}",
+        "options": {}
+      },
+      "id": "a8a06e9a-c7bf-461f-bf78-6e665cc2712f",
+      "name": "Contingencia W1 - Datos inválidos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada W1 (Execute Workflow Trigger)": {
+      "main": [
+        [
+          {
+            "node": "¿Datos obligatorios válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Datos obligatorios válidos?": {
+      "main": [
+        [
+          {
+            "node": "Calificar Lead (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contingencia W1 - Datos inválidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calificar Lead (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Calcular Puntaje y Calificación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contingencia W1 - Error de calificación (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (gpt-4o-mini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Calificar Lead (LLM)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser W1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Calificar Lead (LLM)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Puntaje y Calificación": {
+      "main": [
+        [
+          {
+            "node": "Registrar Lead en Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Lead en Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Salida W1 - Contrato JSON (success)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contingencia W1 - Error de Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

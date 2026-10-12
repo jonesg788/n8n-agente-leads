@@ -46,3 +46,8 @@ Categorías según el puntaje:
 ## Hoja de cálculo
 
 `plantilla_leads.csv` tiene los encabezados de la hoja `Leads`, que el flujo necesita para funcionar.
+
+## Módulos
+
+- **M1 · Agente base:** archivos en la raíz del repo.
+- **M2 · Multi-agente (Manager-Worker):** carpeta [`modulo2/`](modulo2/).
