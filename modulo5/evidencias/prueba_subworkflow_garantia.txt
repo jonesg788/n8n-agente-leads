@@ -1,0 +1,4 @@
+Prueba del sub-workflow (Gobernanza - Reindexar manualmente) · 12/10/2026
+consulta: "garantía de los proyectos" · top_k 4 · min_score 0.40 · reindexado: true
+fragmentos_recuperados: 4 · fragmentos_usados: 4
+scores: 5.1 Garantía incluida = 0.621 | 4.4 Propiedad intelectual = 0.479 | 4.3 Cancelación de proyectos = 0.475 | 3.1 Etapas de un proyecto = 0.446

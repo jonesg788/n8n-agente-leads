@@ -1,0 +1,7 @@
+Iteración 2 (12/10/2026, sub-workflow publicado, Top-K 4, Min Score 0.40)
+P1 bugs gratis post-entrega | consulta IA: "garantía y soporte post-entrega de proyectos" | top1 §5.1 = 0.697 | respuesta: 90 días corridos, sin costo, exclusiones | CORRECTA (cita §5.1)
+P2 caída total un martes | "tiempo de respuesta en caso de caída del sistema un martes" | top1 §5.3 = 0.548 | 2 h hábiles primera respuesta, 8 h resolución, Premium 24x7 (omite "1 hora") | CORRECTA (cita §5.3)
+P3 pagar con cripto | "formas de pago con criptomonedas" | top1 §4.2 = 0.517 | No se aceptan; transferencia/Payoneer/Wise | CORRECTA (cita §4.2)
+P4 arrepentimiento antes de programar | "reembolso por cancelación antes de iniciar programación" | top1 §4.3 = 0.644 | devuelve 50% del anticipo | CORRECTA (cita §4.3)
+P5 cantidad de empleados (fuera del documento) | "cantidad de empleados en Sowe" | top1 "Datos del documento" = 0.543 (supera 0.40) | "No sé: esa información no figura..." | CORRECTA (No sé por regla del prompt, no por umbral)
+Hallazgo: ruido irrelevante (0.543 en P5) puntúa más que un acierto (0.517 en P3) -> el Min Score solo no separa; la regla "No sé" del prompt actúa como segunda barrera.

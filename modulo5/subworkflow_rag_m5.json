@@ -1,0 +1,550 @@
+{
+  "name": "M5 - Sub-workflow RAG Sowe (buscar_manual_sowe)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## M5 · Sub-workflow RAG (recuperación + ingesta)\nLo llama la herramienta **buscar_manual_sowe** del Manager. Tiene que estar **publicado**.\n\n1. **Recuperar (Top-K):** busca en el Vector Store `sowe_manual_v1` (embeddings `text-embedding-3-small`).\n2. **Auto-ingesta:** si el índice en memoria está vacío (por ejemplo, después de un reinicio de n8n) o se fuerza el reindexado, descarga el manual curado desde GitHub, lo divide por títulos (§) y lo indexa con **Clear Store** (idempotente). Después vuelve a buscar.\n3. **Minimum Score:** descarta los fragmentos debajo del umbral y devuelve el contexto con la cita de la sección. Si no queda ninguno → `SIN_FRAGMENTOS_RELEVANTES` → regla **\"No sé\"**.\n\n**Gobernanza:** tras actualizar el manual en GitHub, ejecutar *Gobernanza - Reindexar manualmente*.",
+        "height": 420,
+        "width": 560,
+        "color": 6
+      },
+      "id": "1254da6a-d69e-403c-8caf-f147122f9708",
+      "name": "Nota f026",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "consulta",
+              "type": "string"
+            },
+            {
+              "name": "top_k",
+              "type": "number"
+            },
+            {
+              "name": "min_score",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "8ef4127a-6eeb-4c8f-951a-2687d6f40484",
+      "name": "Entrada desde el Manager (Execute Workflow Trigger)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "40f3faeb-a3c5-4aeb-9800-5c4a98d2640a",
+      "name": "Gobernanza - Reindexar manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "af02341f-8081-4cdb-8999-160e2667bdb4",
+              "name": "consulta",
+              "value": "garantía de los proyectos",
+              "type": "string"
+            },
+            {
+              "id": "74b5e48f-ccf7-4bf7-8070-c9dc4e589a63",
+              "name": "top_k",
+              "value": "={{ 4 }}",
+              "type": "number"
+            },
+            {
+              "id": "e4ea44af-915b-4fd1-94bb-fe6d296b8558",
+              "name": "min_score",
+              "value": "={{ 0.4 }}",
+              "type": "number"
+            },
+            {
+              "id": "40139ff8-1605-4fe7-96e3-1bb408ce50ca",
+              "name": "forzar_reindexado",
+              "value": "={{ true }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1e21a46f-055b-4253-8568-904da3f0568d",
+      "name": "Gobernanza - Parámetros de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "43951a91-3a77-491a-9b59-96076bfa0e85",
+              "name": "consulta",
+              "value": "={{ String($json.consulta ?? '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "d23eaf9b-3617-44ff-ad5a-b093c7ed50e0",
+              "name": "top_k",
+              "value": "={{ Number($json.top_k) || 4 }}",
+              "type": "number"
+            },
+            {
+              "id": "a620991d-c3c6-4d49-93c4-45d0168c74ea",
+              "name": "min_score",
+              "value": "={{ $json.min_score ?? 0.4 }}",
+              "type": "number"
+            },
+            {
+              "id": "c09a169b-c9e8-4b5a-9bd7-b2d384c6b14d",
+              "name": "forzar_reindexado",
+              "value": "={{ $json.forzar_reindexado === true }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7696d1c6-c5be-4699-a38f-bc6827b16a29",
+      "name": "Entrada normalizada (Top-K y Minimum Score)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "memoryKey": "sowe_manual_v1",
+        "prompt": "={{ $json.consulta }}",
+        "topK": "={{ $('Entrada normalizada (Top-K y Minimum Score)').first().json.top_k }}",
+        "includeDocumentMetadata": true
+      },
+      "id": "74330635-48a7-4227-ab3a-9bec844cafad",
+      "name": "Recuperar fragmentos (Top-K)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "a010d799-4f3d-4bbe-af16-341f0a1f6eac",
+      "name": "Embeddings OpenAI (consulta)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        680,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8c560e8d-0430-47c6-8351-7d70887fbb62",
+              "leftValue": "={{ !$json.document || $('Entrada normalizada (Top-K y Minimum Score)').first().json.forzar_reindexado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "e56c8101-1b83-4386-b49c-d278147f1036",
+      "name": "¿Índice vacío o reindexado forzado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/jonesg788/n8n-agente-leads/main/modulo5/Manual_Servicios_Politicas_Sowe_v1_curado.md",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "c9d684e6-3b62-40db-9c83-b85ac248871e",
+      "name": "Ingesta - Descargar manual curado (Markdown)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chunking semántico: un fragmento por subsección del manual (## / ###),\n// con la sección como metadata para poder citarla.\nconst md = String($input.first().json.data ?? '');\nconst out = [];\nlet h2 = '', h3 = '', buf = [];\nconst flush = () => {\n  const texto = buf.join('\\n').trim();\n  if (texto) out.push({ json: { seccion: h3 || h2 || 'Datos del documento', seccion_padre: h2 || 'Encabezado', texto } });\n  buf = [];\n};\nfor (const linea of md.split('\\n')) {\n  if (linea.startsWith('# ')) continue;\n  if (linea.startsWith('## ')) { flush(); h2 = linea.slice(3).trim(); h3 = ''; continue; }\n  if (linea.startsWith('### ')) { flush(); h3 = linea.slice(4).trim(); continue; }\n  buf.push(linea);\n}\nflush();\nreturn out;"
+      },
+      "id": "353bf47c-56a4-448c-8dbf-818e9500dbf8",
+      "name": "Ingesta - Chunking semántico por títulos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": "sowe_manual_v1",
+        "clearStore": true
+      },
+      "id": "286f6401-b16e-47b2-b3e1-7b190d38f703",
+      "name": "Ingesta - Indexar en Vector Store (sowe_manual_v1)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.1,
+      "position": [
+        1660,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "9f6bd7c7-3e35-431b-a662-e30e14c1676a",
+      "name": "Embeddings OpenAI (ingesta)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1580,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ '## ' + $json.seccion_padre + '\\n### ' + $json.seccion + '\\n' + $json.texto }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "seccion",
+                "value": "={{ $json.seccion }}"
+              },
+              {
+                "name": "documento",
+                "value": "Manual de Servicios Sowe v1.0"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b484e94b-4c9b-4a63-bfbc-46955715ce78",
+      "name": "Default Data Loader (metadata: sección)",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "chunkSize": 1500,
+        "chunkOverlap": 150,
+        "options": {
+          "splitCode": "markdown"
+        }
+      },
+      "id": "5e9ddfa0-6f17-4109-85f6-1faab5ce60fb",
+      "name": "Text Splitter (Markdown · 1500 / 150)",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "memoryKey": "sowe_manual_v1",
+        "prompt": "={{ $('Entrada normalizada (Top-K y Minimum Score)').first().json.consulta }}",
+        "topK": "={{ $('Entrada normalizada (Top-K y Minimum Score)').first().json.top_k }}",
+        "includeDocumentMetadata": true
+      },
+      "id": "6bfb1357-4caf-4228-a112-a024476c9197",
+      "name": "Recuperar fragmentos tras indexar (Top-K)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.1,
+      "position": [
+        1960,
+        -200
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "fc50d259-3186-47d7-a4b6-f29fcb895972",
+      "name": "Embeddings OpenAI (consulta tras indexar)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1940,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Minimum Score: descarta los fragmentos con similitud menor al umbral\n// y devuelve el contexto con la cita de la sección.\nconst entrada = $('Entrada normalizada (Top-K y Minimum Score)').first().json;\nconst minScore = Number(entrada.min_score);\nconst origen = $('Recuperar fragmentos tras indexar (Top-K)').isExecuted ? $('Recuperar fragmentos tras indexar (Top-K)').all() : $('Recuperar fragmentos (Top-K)').all();\nconst docs = origen\n  .map(i => ({ score: Number(i.json.score ?? 0), texto: i.json.document?.pageContent ?? '', seccion: i.json.document?.metadata?.seccion ?? 'sin sección' }))\n  .filter(d => d.texto);\nconst relevantes = docs.filter(d => d.score >= minScore);\nconst base = {\n  consulta: entrada.consulta, top_k: entrada.top_k, min_score: minScore,\n  reindexado: $('Recuperar fragmentos tras indexar (Top-K)').isExecuted,\n  fragmentos_recuperados: docs.length, fragmentos_usados: relevantes.length,\n  scores: docs.map(d => d.seccion + ' = ' + d.score.toFixed(3)).join(' | ')\n};\nif (relevantes.length === 0) {\n  return [{ json: { resultado: 'SIN_FRAGMENTOS_RELEVANTES: ningún fragmento del Manual de Servicios Sowe v1.0 supera el umbral de relevancia. Responde exactamente con la regla \"No sé\".', ...base } }];\n}\nconst contexto = relevantes.map((d, i) =>\n  `[Fragmento ${i + 1} · Fuente: Manual de Servicios Sowe v1.0, §${d.seccion} · score ${d.score.toFixed(3)}]\\n${d.texto}`\n).join('\\n\\n---\\n\\n');\nreturn [{ json: { resultado: contexto, ...base } }];"
+      },
+      "id": "cc6a0456-d530-4bfe-ab62-2125ae03fd3e",
+      "name": "Filtro Minimum Score y citas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        0
+      ],
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Entrada desde el Manager (Execute Workflow Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Entrada normalizada (Top-K y Minimum Score)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gobernanza - Reindexar manualmente": {
+      "main": [
+        [
+          {
+            "node": "Gobernanza - Parámetros de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gobernanza - Parámetros de prueba": {
+      "main": [
+        [
+          {
+            "node": "Entrada normalizada (Top-K y Minimum Score)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada normalizada (Top-K y Minimum Score)": {
+      "main": [
+        [
+          {
+            "node": "Recuperar fragmentos (Top-K)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI (consulta)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Recuperar fragmentos (Top-K)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar fragmentos (Top-K)": {
+      "main": [
+        [
+          {
+            "node": "¿Índice vacío o reindexado forzado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Índice vacío o reindexado forzado?": {
+      "main": [
+        [
+          {
+            "node": "Ingesta - Descargar manual curado (Markdown)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Filtro Minimum Score y citas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta - Descargar manual curado (Markdown)": {
+      "main": [
+        [
+          {
+            "node": "Ingesta - Chunking semántico por títulos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta - Chunking semántico por títulos": {
+      "main": [
+        [
+          {
+            "node": "Ingesta - Indexar en Vector Store (sowe_manual_v1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI (ingesta)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Ingesta - Indexar en Vector Store (sowe_manual_v1)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader (metadata: sección)": {
+      "ai_document": [
+        [
+          {
+            "node": "Ingesta - Indexar en Vector Store (sowe_manual_v1)",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Splitter (Markdown · 1500 / 150)": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader (metadata: sección)",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta - Indexar en Vector Store (sowe_manual_v1)": {
+      "main": [
+        [
+          {
+            "node": "Recuperar fragmentos tras indexar (Top-K)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI (consulta tras indexar)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Recuperar fragmentos tras indexar (Top-K)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar fragmentos tras indexar (Top-K)": {
+      "main": [
+        [
+          {
+            "node": "Filtro Minimum Score y citas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
