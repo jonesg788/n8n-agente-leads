@@ -51,3 +51,4 @@ Categorías según el puntaje:
 
 - **M1 · Agente base:** archivos en la raíz del repo.
 - **M2 · Multi-agente (Manager-Worker):** carpeta [`modulo2/`](modulo2/).
+- **M3 · Memoria persistente y summarization:** carpeta [`modulo3/`](modulo3/).
