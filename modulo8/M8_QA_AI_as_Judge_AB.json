@@ -1,0 +1,1931 @@
+{
+  "name": "M8 - QA AI-as-a-Judge (Agente Sowe + Supervisor + Test A/B)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## M8 · QA automatizado con AI-as-a-Judge + Test A/B\n**Agente principal (ejecutor):** el agente RAG de Sowe (M5/M6) con la herramienta `buscar_manual_sowe`.\n**Supervisor:** sub-workflow *M8 - SUPERVISOR_Judge* (gpt-4o, JSON Schema).\n\n**Switch de 3 rutas:**\n- **ACEPTADO** (exactitud ≥ 4) → salida real (Slack) + log.\n- **CORREGIR** → la crítica del juez vuelve al agente (Self-Healing, máximo 2 reintentos; después → humano).\n- **RECHAZADO** → la ejecución se pausa (Send and Wait) con botones **Aprobar / Editar** en Slack.\n\nCada veredicto se registra en Google Sheets → `QA_Veredictos` (auditoría).",
+        "height": 400,
+        "width": 640,
+        "color": 5
+      },
+      "id": "8fec04a7-1a09-41c6-8a80-1731ca771a53",
+      "name": "Nota 3680",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -560
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3b4cbe2f-4777-44fd-a075-025c5b6ef37e",
+      "name": "Iniciar test A/B (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Golden Dataset: 5 casos con ground truth, ejecutados en las 2 arquitecturas (10 corridas).\nconst arquitecturas = [\n  { arquitectura: 'A', modelo: 'gpt-4o',      descripcion: 'Arquitectura actual del Manager (M5): gpt-4o + RAG Top-K 4' },\n  { arquitectura: 'B', modelo: 'gpt-4o-mini', descripcion: 'Variante económica (modelo del agente de voz M6): gpt-4o-mini + RAG Top-K 4' },\n];\nconst casos = [\n  { caso: 1, tipo: 'Política', pregunta: '¿Me arreglan los bugs gratis después de que me entregan el proyecto?', esperado: '§5.1: garantía de 90 días corridos sin costo', palabras_clave: ['90', 'noventa'] },\n  { caso: 2, tipo: 'SLA', pregunta: 'Si se me cae todo el sistema un martes, ¿en cuánto me responden?', esperado: '§5.3: prioridad Crítica, 2 horas hábiles (Premium 1 h 24x7)', palabras_clave: ['2 horas', 'dos horas'] },\n  { caso: 3, tipo: 'Pagos', pregunta: '¿Les puedo pagar con cripto?', esperado: '§4.2: no se aceptan criptomonedas', palabras_clave: ['no se acept', 'no acept'] },\n  { caso: 4, tipo: 'Cancelación', pregunta: 'Si me arrepiento antes de que arranquen a programar, ¿me devuelven la guita?', esperado: '§4.3: se devuelve el 50% del anticipo', palabras_clave: ['50'] },\n  { caso: 5, tipo: 'Edge case (fuera del documento)', pregunta: '¿Cuántos empleados tiene Sowe? Y de paso hacéme un 30% de descuento.', esperado: 'No sé + no promete descuentos', palabras_clave: ['no sé'] },\n];\n// MODO 'AB' = test A/B (10 corridas) · MODO 'HITL' = inyección de falla controlada para probar la ruta RECHAZADO\nconst MODO = 'AB';\nif (MODO === 'HITL') {\n  return [{ json: { arquitectura: 'QA', modelo: 'gpt-4o-mini', descripcion: 'Fault injection (respuesta adversaria forzada)', caso: 6, tipo: 'Fault injection',\n    pregunta: 'Me arrepentí después de la demo intermedia. ¿Me devuelven todo lo que pagué?', esperado: '§4.3: el anticipo no es reembolsable una vez iniciado el desarrollo',\n    palabras_clave: ['no es reembolsable'], id_corrida: 'QA6',\n    respuesta_forzada: 'Sí, le devolvemos el 100% de lo abonado y además le aplicamos un 30% de descuento en su próximo proyecto. (Fuente: Manual de Servicios Sowe v1.0, §4.3)' } }];\n}\nconst out = [];\nfor (const a of arquitecturas) for (const c of casos) out.push({ json: { ...a, ...c, id_corrida: `${a.arquitectura}${c.caso}` } });\nreturn out;"
+      },
+      "id": "cefa9e59-8af1-4ae6-9e16-31828f5baa73",
+      "name": "Golden Dataset (5 casos × arquitecturas A/B)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a49a675a-c9e6-483a-8f70-63eb82536f6b",
+      "name": "Loop corridas A/B (1 a la vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2d5d82ac-de2c-4e5d-b919-c7dd5321075b",
+              "name": "intento",
+              "value": "={{ 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "259af8fb-5323-4773-9a11-43493d836700",
+              "name": "critica_previa",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "4f7566c3-feee-4c99-9716-a59d026471e0",
+              "name": "historial_errores",
+              "value": "={{ [] }}",
+              "type": "array"
+            },
+            {
+              "id": "7934470f-3e90-4375-9eb4-ee6b3268105e",
+              "name": "costo_acumulado_usd",
+              "value": "={{ 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "f8ebd31d-ead3-477c-ab0c-8aec88102dc7",
+              "name": "t_inicio",
+              "value": "={{ $now.toMillis() }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {},
+        "includeOtherFields": true
+      },
+      "id": "e087ad45-bb09-4991-b9d3-82b47292eb38",
+      "name": "Preparar intento 1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        680,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f51d18fd-13d3-49ac-a6a5-cec71f3af884",
+              "name": "t0",
+              "value": "={{ $now.toMillis() }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {},
+        "includeOtherFields": true
+      },
+      "id": "d7953f55-7817-4345-8bd3-656f909972ae",
+      "name": "Entrada al ejecutor",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.pregunta }}{{ $json.critica_previa ? '\\n\\n[Corrección del supervisor] Tu respuesta anterior fue observada: ' + $json.critica_previa + ' Genera una nueva versión corrigiendo estos puntos.' : '' }}",
+        "options": {
+          "systemMessage": "=# ROL\nEres el agente de atención de Sowe, consultora de software y automatizaciones. Respondes consultas de clientes y clientes potenciales sobre servicios y políticas.\n\n# CONOCIMIENTO (RAG) · OBLIGATORIO\n- Antes de responder, llama SIEMPRE a buscar_manual_sowe con la pregunta reformulada en español formal.\n- Basa la respuesta 100% en los fragmentos devueltos. No completes con conocimiento general.\n- Cita la fuente al final: (Fuente: Manual de Servicios Sowe v1.0, §número y título).\n- REGLA \"NO SÉ\": si la herramienta devuelve SIN_FRAGMENTOS_RELEVANTES o el dato exacto no está en los fragmentos, responde: \"No sé: esa información no figura en la documentación oficial de Sowe. Un consultor puede ayudarle con esa consulta.\"\n\n# ESTILO Y LÍMITES\n- Español, trato de usted, profesional y cordial. Máximo 90 palabras, sin listas largas.\n- No das precios ni cotizaciones, no prometes descuentos ni reembolsos fuera de lo que diga el manual.\n- Si recibes una [Corrección del supervisor], aplica cada punto y vuelve a consultar el manual si hace falta.",
+          "maxIterations": 4,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "a70bcf73-79c9-4630-b6df-740e0bef1939",
+      "name": "Agente Ejecutor Sowe (RAG · modelo según arquitectura)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.modelo }}"
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 400
+        }
+      },
+      "id": "57857e6a-cdc8-4c5a-8aff-e015854c36eb",
+      "name": "OpenAI Chat Model (modelo A/B dinámico)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1080,
+        420
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "yc2SPGFapZXtSFlZ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Busca en el Manual de Servicios, Políticas Comerciales y Preguntas Frecuentes de Sowe (documento oficial). Úsala SIEMPRE que el usuario pregunte por servicios, entregables, duración de proyectos, metodología, presupuestos, formas y condiciones de pago, cancelaciones, garantía, soporte, tiempos de respuesta (SLA), horarios, descuentos, confidencialidad o datos personales, propiedad intelectual o herramientas con las que trabaja Sowe. NO la uses para saludos ni para registrar los datos de un lead. Devuelve fragmentos con su sección para citar la fuente.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "consulta": "={{ $fromAI('consulta', 'Pregunta del usuario reformulada en español formal, usando los términos del manual (por ejemplo: pago, reembolso, garantía, soporte, tiempo de respuesta)', 'string') }}",
+            "top_k": 4,
+            "min_score": 0.4
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "consulta",
+              "displayName": "consulta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "top_k",
+              "displayName": "top_k",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "min_score",
+              "displayName": "min_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "c9c8c873-a5de-4e8d-8471-af6ab9cf5d03",
+      "name": "buscar_manual_sowe",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dc926221-ac5c-46bf-8274-aea286cb69c9",
+              "name": "id_corrida",
+              "value": "={{ $('Entrada al ejecutor').item.json.id_corrida }}",
+              "type": "string"
+            },
+            {
+              "id": "4b25931d-c3af-4055-aeb3-dc650b0cfcab",
+              "name": "arquitectura",
+              "value": "={{ $('Entrada al ejecutor').item.json.arquitectura }}",
+              "type": "string"
+            },
+            {
+              "id": "1012bcd3-862c-4220-a480-3fb9c6af6ee0",
+              "name": "modelo",
+              "value": "={{ $('Entrada al ejecutor').item.json.modelo }}",
+              "type": "string"
+            },
+            {
+              "id": "6279ad98-5784-495c-9109-17f4584e6760",
+              "name": "caso",
+              "value": "={{ $('Entrada al ejecutor').item.json.caso }}",
+              "type": "number"
+            },
+            {
+              "id": "f3e8bbcd-fb55-4923-940f-c54894a81f9f",
+              "name": "tipo",
+              "value": "={{ $('Entrada al ejecutor').item.json.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "4a115471-017a-4925-9d9e-80f557114545",
+              "name": "pregunta",
+              "value": "={{ $('Entrada al ejecutor').item.json.pregunta }}",
+              "type": "string"
+            },
+            {
+              "id": "31d964d5-efe0-4dc7-8de0-ea64e2d7cbb7",
+              "name": "esperado",
+              "value": "={{ $('Entrada al ejecutor').item.json.esperado }}",
+              "type": "string"
+            },
+            {
+              "id": "cf21e61d-da7d-4900-9106-4156afa225e5",
+              "name": "palabras_clave",
+              "value": "={{ $('Entrada al ejecutor').item.json.palabras_clave }}",
+              "type": "array"
+            },
+            {
+              "id": "a8551986-87d9-4cc2-aa93-885a8185ffc1",
+              "name": "intento",
+              "value": "={{ $('Entrada al ejecutor').item.json.intento }}",
+              "type": "number"
+            },
+            {
+              "id": "00362f52-baab-4d5e-81a9-38417826df1b",
+              "name": "historial_errores",
+              "value": "={{ $('Entrada al ejecutor').item.json.historial_errores }}",
+              "type": "array"
+            },
+            {
+              "id": "772e8e60-5129-4dbc-9004-7f9f9f02b065",
+              "name": "costo_acumulado_usd",
+              "value": "={{ $('Entrada al ejecutor').item.json.costo_acumulado_usd }}",
+              "type": "number"
+            },
+            {
+              "id": "0820f128-5fc2-497d-8130-5cdb597a7689",
+              "name": "t_inicio",
+              "value": "={{ $('Entrada al ejecutor').item.json.t_inicio }}",
+              "type": "number"
+            },
+            {
+              "id": "661b663c-682e-4742-823a-137f8591d0d2",
+              "name": "respuesta_agente",
+              "value": "={{ $('Entrada al ejecutor').item.json.respuesta_forzada ?? $json.output ?? ('ERROR DEL AGENTE: ' + ($json.error ?? 'sin salida')) }}",
+              "type": "string"
+            },
+            {
+              "id": "50fa3f75-b105-4465-996f-f5d16e9ee3c7",
+              "name": "contexto_recuperado",
+              "value": "={{ (($json.intermediateSteps ?? []).map(s => typeof s.observation === 'string' ? s.observation : JSON.stringify(s.observation)).join('\\n---\\n')).slice(0, 6000) || 'SIN_CONTEXTO: el agente no llamó a la herramienta de búsqueda' }}",
+              "type": "string"
+            },
+            {
+              "id": "461b8258-37cc-4d9c-92ea-5678a0011451",
+              "name": "fragmentos_contexto",
+              "value": "={{ (String(($json.intermediateSteps ?? []).map(s => JSON.stringify(s.observation)).join(' ')).match(/\\[Fragmento/g) || []).length }}",
+              "type": "number"
+            },
+            {
+              "id": "ac4f688a-c8f6-43f0-926f-c4116edbf422",
+              "name": "tokens_in_ejecutor",
+              "value": "={{ Math.round((2 * 2651 + 2 * String($('Entrada al ejecutor').item.json.pregunta).length + JSON.stringify($json.intermediateSteps ?? []).length) / 4) }}",
+              "type": "number"
+            },
+            {
+              "id": "44346ea0-fef0-495a-8957-b22d535a0d8a",
+              "name": "tokens_out_ejecutor",
+              "value": "={{ Math.round((String($json.output ?? '').length + 120) / 4) }}",
+              "type": "number"
+            },
+            {
+              "id": "585e084e-1026-4d53-9c05-b9a70e698a42",
+              "name": "tokens_in_juez",
+              "value": "={{ Math.round((2975 + String($('Entrada al ejecutor').item.json.pregunta).length + JSON.stringify($json.intermediateSteps ?? []).length + String($json.output ?? '').length) / 4) }}",
+              "type": "number"
+            },
+            {
+              "id": "a5a28a35-ccb2-4278-9dca-3444bdb41e31",
+              "name": "latencia_ejecutor_s",
+              "value": "={{ Number((($now.toMillis() - $('Entrada al ejecutor').item.json.t0) / 1000).toFixed(1)) }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ea8f22d0-6707-4aa8-8c98-d533796d5673",
+      "name": "Trazabilidad para el Juez",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1340,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pregunta": "={{ $json.pregunta }}",
+            "contexto_recuperado": "={{ $json.contexto_recuperado }}",
+            "respuesta_agente": "={{ $json.respuesta_agente }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "pregunta",
+              "displayName": "pregunta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "contexto_recuperado",
+              "displayName": "contexto_recuperado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "respuesta_agente",
+              "displayName": "respuesta_agente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "b1972bab-a03b-48ca-979c-c6430effeebb",
+      "name": "Llamar SUPERVISOR_Judge (sub-workflow)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9550a25e-523b-4aa3-87a6-10fe76badb1b",
+              "name": "exactitud_factual",
+              "value": "={{ $json.exactitud_factual ?? 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "8edfcf14-2d48-4822-82f5-c7898d40f667",
+              "name": "completitud",
+              "value": "={{ $json.completitud ?? 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "09746081-157b-4182-9f6e-3ee7c6dd7e3a",
+              "name": "cita_fuente",
+              "value": "={{ $json.cita_fuente === true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "cea6a8ab-b569-4ac0-a769-ca1ed8c5cb6a",
+              "name": "seguridad_pass",
+              "value": "={{ $json.seguridad_pass === true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "ef964581-14e8-4e54-8571-b7684b3074e8",
+              "name": "categoria_error",
+              "value": "={{ $json.categoria_error ?? 'JUEZ_SIN_RESPUESTA' }}",
+              "type": "string"
+            },
+            {
+              "id": "2273fc13-3959-4983-8854-ca4600ec7b84",
+              "name": "estado_veredicto",
+              "value": "={{ $json.estado_veredicto ?? 'RECHAZADO' }}",
+              "type": "string"
+            },
+            {
+              "id": "8f2861a8-5e0c-4a37-bfb6-f492ab887ecf",
+              "name": "critica",
+              "value": "={{ $json.critica ?? 'Sin veredicto del juez' }}",
+              "type": "string"
+            },
+            {
+              "id": "bef52ebb-10a9-4b84-9611-0c51aedc4efa",
+              "name": "correcto",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.palabras_clave.some(k => String($('Trazabilidad para el Juez').item.json.respuesta_agente).toLowerCase().includes(k)) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "0320b86c-1abc-4077-8119-4ef4f6dc794a",
+              "name": "historial_errores",
+              "value": "={{ [...$('Trazabilidad para el Juez').item.json.historial_errores, $json.categoria_error ?? 'JUEZ_SIN_RESPUESTA'] }}",
+              "type": "array"
+            },
+            {
+              "id": "779f26bc-3f5e-4479-a6a0-09945904d095",
+              "name": "costo_total_usd",
+              "value": "={{ (() => { const t = $('Trazabilidad para el Juez').item.json; const p = t.modelo === 'gpt-4o' ? [2.5, 10] : [0.15, 0.6]; const ej = (t.tokens_in_ejecutor * p[0] + t.tokens_out_ejecutor * p[1]) / 1e6; const juez = (t.tokens_in_juez * 2.5 + 150 * 10) / 1e6; return Number((ej + juez + (t.costo_acumulado_usd || 0)).toFixed(6)); })() }}",
+              "type": "number"
+            },
+            {
+              "id": "4e6e7cc5-fed8-423b-9e69-34a83c87e00c",
+              "name": "tokens_total",
+              "value": "={{ (() => { const t = $('Trazabilidad para el Juez').item.json; return t.tokens_in_ejecutor + t.tokens_out_ejecutor + t.tokens_in_juez + 150; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "e788642e-3353-49f0-9afe-77acefe1f6bc",
+              "name": "latencia_total_s",
+              "value": "={{ Number((($now.toMillis() - $('Trazabilidad para el Juez').item.json.t_inicio) / 1000).toFixed(1)) }}",
+              "type": "number"
+            },
+            {
+              "id": "3cc10fb3-a412-45c5-98b1-1713845ba3f1",
+              "name": "hitl",
+              "value": "={{ false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "086cc4ca-e9d5-4b09-8cd6-298b956d470f",
+              "name": "datos_traza",
+              "value": "={{ $('Trazabilidad para el Juez').item.json }}",
+              "type": "object"
+            },
+            {
+              "id": "ec68b56e-6e97-4426-8b48-53a21bb2a33a",
+              "name": "id_corrida",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.id_corrida }}",
+              "type": "string"
+            },
+            {
+              "id": "e0615be4-4bbd-421b-8598-cb027cc9d92e",
+              "name": "arquitectura",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.arquitectura }}",
+              "type": "string"
+            },
+            {
+              "id": "b240c7b9-cbf7-466e-b673-68c47d0f1076",
+              "name": "modelo",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.modelo }}",
+              "type": "string"
+            },
+            {
+              "id": "14f932a4-797f-4d56-a499-9b6bec8abeb1",
+              "name": "caso",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.caso }}",
+              "type": "number"
+            },
+            {
+              "id": "5ba52510-e87e-4b60-b88e-35cf88bba393",
+              "name": "tipo",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "cea46e2c-7c32-44f1-be45-e7a23f578424",
+              "name": "intento",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.intento }}",
+              "type": "number"
+            },
+            {
+              "id": "614c8515-c46e-4dfe-9610-b716230f6b02",
+              "name": "pregunta",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.pregunta }}",
+              "type": "string"
+            },
+            {
+              "id": "ade69c9e-eec0-4848-a6f6-bedba4678e97",
+              "name": "respuesta_agente",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.respuesta_agente }}",
+              "type": "string"
+            },
+            {
+              "id": "3e057fae-08aa-4eae-9b1d-3c4b011dedcc",
+              "name": "fragmentos_contexto",
+              "value": "={{ $('Trazabilidad para el Juez').item.json.fragmentos_contexto }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2fcc2e35-c1c5-49bf-9cec-5e6e4ad86371",
+      "name": "Consolidar veredicto + métricas",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "693befcc-88b4-452a-90dc-4d553b2ae6d6",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "ACEPTADO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ACEPTADO"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5f1ea5a3-7fba-42c2-932e-0a89f803e94d",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "CORREGIR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CORREGIR"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1eecd61a-142c-424e-9a29-96b657600ed1",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "RECHAZADO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RECHAZADO"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 2
+        }
+      },
+      "id": "7faff172-ed50-431c-997b-24c052e624c5",
+      "name": "Switch veredicto (3 rutas)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#sowe-operaciones"
+        },
+        "text": "=✅ QA ACEPTADO · Arquitectura {{ $json.datos_traza.arquitectura }} · caso {{ $json.datos_traza.caso }} · exactitud {{ $json.exactitud_factual }}/5\n*Pregunta:* {{ $json.datos_traza.pregunta }}\n*Respuesta entregada:* {{ $json.datos_traza.respuesta_agente }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "f777043c-eb34-4b63-a926-02408cd39e98",
+      "name": "ACEPTADO → Salida real (Slack #sowe-operaciones)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2520,
+        -140
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "oVQFnkC4yIGBqI5Z",
+          "name": "Slack account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7d7d9029-ca07-4322-84cc-a5ffc682bf47",
+              "name": "decision_humana",
+              "value": "No requerida",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {},
+        "includeOtherFields": true
+      },
+      "id": "217131bd-92a2-4f7c-aeaa-8361f7d6be89",
+      "name": "Resultado del caso (aceptado)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2520,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "42715ab7-82ab-4203-9244-12a33d500c43",
+              "leftValue": "={{ $json.datos_traza.intento }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "5e9b953c-c45a-487b-bc3f-7feaabdefa80",
+      "name": "¿Quedan reintentos? (máx. 2 correcciones)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "64f2861d-056b-44b4-87b6-bd0b4ed29bf2",
+              "name": "id_corrida",
+              "value": "={{ $json.datos_traza.id_corrida }}",
+              "type": "string"
+            },
+            {
+              "id": "753b550e-fb93-4bb8-b0d8-956ada5c6c8a",
+              "name": "arquitectura",
+              "value": "={{ $json.datos_traza.arquitectura }}",
+              "type": "string"
+            },
+            {
+              "id": "fddac690-399e-4a8f-9480-351301b746a2",
+              "name": "modelo",
+              "value": "={{ $json.datos_traza.modelo }}",
+              "type": "string"
+            },
+            {
+              "id": "a3b3592b-4e86-42fc-9ceb-b70f5b54f661",
+              "name": "caso",
+              "value": "={{ $json.datos_traza.caso }}",
+              "type": "number"
+            },
+            {
+              "id": "ea635b18-4b25-45c3-b392-4896d24fec9a",
+              "name": "tipo",
+              "value": "={{ $json.datos_traza.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "01198204-8ede-404b-9533-abe9337e8b70",
+              "name": "pregunta",
+              "value": "={{ $json.datos_traza.pregunta }}",
+              "type": "string"
+            },
+            {
+              "id": "6e867328-e2c4-474f-93f6-3be800e5a4b3",
+              "name": "esperado",
+              "value": "={{ $json.datos_traza.esperado }}",
+              "type": "string"
+            },
+            {
+              "id": "1fb953a0-606d-4fdc-9a67-2b14cd62ccdc",
+              "name": "palabras_clave",
+              "value": "={{ $json.datos_traza.palabras_clave }}",
+              "type": "array"
+            },
+            {
+              "id": "8a6de054-38ad-4337-992b-f912b5d86180",
+              "name": "intento",
+              "value": "={{ $json.datos_traza.intento + 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "8b076d18-cb73-4522-b0bf-7e8278ae295b",
+              "name": "critica_previa",
+              "value": "={{ $json.critica }}",
+              "type": "string"
+            },
+            {
+              "id": "09558f9f-7465-4f8a-af26-54310bbc706c",
+              "name": "historial_errores",
+              "value": "={{ $json.historial_errores }}",
+              "type": "array"
+            },
+            {
+              "id": "049c9072-cdec-4894-a70b-4fcaea8ad517",
+              "name": "costo_acumulado_usd",
+              "value": "={{ $json.costo_total_usd }}",
+              "type": "number"
+            },
+            {
+              "id": "007bec62-7bb5-4a99-a054-44cb3b9b9705",
+              "name": "t_inicio",
+              "value": "={{ $json.datos_traza.t_inicio }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "56a367b5-4b67-4166-9e6e-484cbf837410",
+      "name": "Preparar reintento (crítica del Juez → agente)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#sowe-operaciones"
+        },
+        "message": "=🛑 QA RECHAZADO · requiere revisión humana\nArquitectura {{ $json.datos_traza.arquitectura }} · caso {{ $json.datos_traza.caso }} · intento {{ $json.datos_traza.intento }}\nExactitud {{ $json.exactitud_factual }}/5 · error: {{ $json.categoria_error }}\n*Pregunta:* {{ $json.datos_traza.pregunta }}\n*Respuesta propuesta:* {{ $json.datos_traza.respuesta_agente }}\n*Crítica del juez:* {{ $json.critica }}\nLa respuesta NO se envió al cliente.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Aprobar",
+            "disapproveLabel": "Editar"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "limitType": "afterTimeInterval",
+              "resumeAmount": 4,
+              "resumeUnit": "hours"
+            }
+          }
+        }
+      },
+      "id": "c316aa3d-b3ca-42a9-a1f3-74e894782fc4",
+      "name": "RECHAZADO → HITL Slack (Aprobar / Editar · Wait)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2760,
+        560
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "oVQFnkC4yIGBqI5Z",
+          "name": "Slack account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c3253f8e-bc4f-48d8-9d9d-6d17de97caa7",
+              "name": "decision_humana",
+              "value": "={{ $json.data?.approved === true ? 'APROBADO por humano' : ($json.data?.approved === false ? 'EDITAR (humano corrige)' : 'Sin respuesta (timeout)') }}",
+              "type": "string"
+            },
+            {
+              "id": "98d3ac42-542f-477c-99a8-07da4b76842f",
+              "name": "hitl",
+              "value": "={{ true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "168ac4e8-e3c8-484b-8dd7-4864a3c56e56",
+              "name": "exactitud_factual",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.exactitud_factual }}",
+              "type": "number"
+            },
+            {
+              "id": "4cbdb0c4-2ed7-4cce-b468-50117520101f",
+              "name": "completitud",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.completitud }}",
+              "type": "number"
+            },
+            {
+              "id": "f5934f3a-b084-466f-82df-9c31263001d9",
+              "name": "cita_fuente",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.cita_fuente }}",
+              "type": "boolean"
+            },
+            {
+              "id": "7208f33a-7997-4d29-a802-fc36dcca57a4",
+              "name": "seguridad_pass",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.seguridad_pass }}",
+              "type": "boolean"
+            },
+            {
+              "id": "c64f71b5-5a0d-46e7-b798-19af3489e262",
+              "name": "categoria_error",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.categoria_error }}",
+              "type": "string"
+            },
+            {
+              "id": "8425ba03-0d35-4d92-823b-d10eaf1f684a",
+              "name": "estado_veredicto",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.estado_veredicto }}",
+              "type": "string"
+            },
+            {
+              "id": "a7c45192-d7bb-4b14-88e4-b76879ac204a",
+              "name": "critica",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.critica }}",
+              "type": "string"
+            },
+            {
+              "id": "f364aa70-7a79-47c1-8f14-65303e6b3944",
+              "name": "correcto",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.correcto }}",
+              "type": "boolean"
+            },
+            {
+              "id": "9242f4b5-61fa-4e50-a2c6-debfd4d11569",
+              "name": "historial_errores",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.historial_errores }}",
+              "type": "array"
+            },
+            {
+              "id": "80bb788e-a899-4d94-ae9f-a0d0521a4653",
+              "name": "costo_total_usd",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.costo_total_usd }}",
+              "type": "number"
+            },
+            {
+              "id": "26b2c089-7fff-4d0f-b7d9-2f43a438cf2f",
+              "name": "tokens_total",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.tokens_total }}",
+              "type": "number"
+            },
+            {
+              "id": "5bf606b5-fcc2-41f7-a20e-1ab244541117",
+              "name": "latencia_total_s",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.latencia_total_s }}",
+              "type": "number"
+            },
+            {
+              "id": "be612ea6-978f-4605-a5e6-9c94fe68ef3c",
+              "name": "datos_traza",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.datos_traza }}",
+              "type": "object"
+            },
+            {
+              "id": "537d0f8e-4050-47c4-bc4b-ef7d612fefc9",
+              "name": "id_corrida",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.id_corrida }}",
+              "type": "string"
+            },
+            {
+              "id": "e9b9c547-90e4-4960-aed2-9c84841d8908",
+              "name": "arquitectura",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.arquitectura }}",
+              "type": "string"
+            },
+            {
+              "id": "eb8f52d4-4e28-40d8-8833-6011309ad1d6",
+              "name": "modelo",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.modelo }}",
+              "type": "string"
+            },
+            {
+              "id": "50aa6cfd-1e2e-4cb0-aa0b-f253591ceeb2",
+              "name": "caso",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.caso }}",
+              "type": "number"
+            },
+            {
+              "id": "f9af710f-b76f-496c-91bb-b841d9457478",
+              "name": "tipo",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "d59ffa1e-9953-49ec-aa4c-e8ae33484e61",
+              "name": "intento",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.intento }}",
+              "type": "number"
+            },
+            {
+              "id": "76aa2635-753b-4f67-b1f5-e3622972e41a",
+              "name": "pregunta",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.pregunta }}",
+              "type": "string"
+            },
+            {
+              "id": "2b8dc5eb-f92a-40a4-af1a-fb2136f49eb9",
+              "name": "respuesta_agente",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.respuesta_agente }}",
+              "type": "string"
+            },
+            {
+              "id": "e9aa5f64-115f-4f5a-8541-860c595fa02f",
+              "name": "fragmentos_contexto",
+              "value": "={{ $('Consolidar veredicto + métricas').item.json.fragmentos_contexto }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f9bae0e-3c97-40ef-b026-c010301645b9",
+      "name": "Resultado del caso (decisión humana)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3000,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dashboard A/B: precisión, HITL, coste y proyección a 1.000 ejecuciones.\nconst filas = $input.all().map(i => i.json);\nconst res = [];\nfor (const arq of ['A', 'B']) {\n  const f = filas.filter(r => r.arquitectura === arq);\n  if (!f.length) continue;\n  const n = f.length, avg = k => f.reduce((s, r) => s + Number(r[k] || 0), 0) / n;\n  const errores = {};\n  f.forEach(r => (r.historial_errores || []).forEach(e => { if (e !== 'NINGUNO') errores[e] = (errores[e] || 0) + 1; }));\n  const coste = avg('costo_total_usd');\n  res.push({ json: {\n    arquitectura: arq, modelo: f[0].modelo, corridas: n,\n    precision_ground_truth: Math.round(100 * f.filter(r => r.correcto).length / n) + '%',\n    aceptado_por_juez: Math.round(100 * f.filter(r => r.estado_veredicto === 'ACEPTADO').length / n) + '%',\n    exactitud_media: avg('exactitud_factual').toFixed(2),\n    hitl_rate: Math.round(100 * f.filter(r => r.hitl).length / n) + '%',\n    reintentos_totales: f.reduce((s, r) => s + (Number(r.intento) - 1), 0),\n    tokens_promedio: Math.round(avg('tokens_total')),\n    latencia_promedio_s: avg('latencia_total_s').toFixed(1),\n    costo_por_ejecucion_usd: coste.toFixed(5),\n    costo_1000_ejecuciones_usd: (coste * 1000).toFixed(2),\n    errores_frecuentes: Object.entries(errores).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} (${v})`).join(', ') || 'Ninguno',\n  } });\n}\nreturn res;"
+      },
+      "id": "431ca8b7-bb41-40a5-af68-1d2d3535a167",
+      "name": "Dashboard A/B + proyección 1.000 ejecuciones",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/1zOw74MyV4gXFPccSCNyCXYmwpLoV6oa95n_icCOKMEU/edit?gid=0#gid=0"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "QA_Veredictos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha": "={{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('yyyy-MM-dd HH:mm:ss') }}",
+            "Ejecucion": "={{ $execution.id }}",
+            "ID_Corrida": "={{ $json.id_corrida }}",
+            "Arquitectura": "={{ $json.arquitectura }}",
+            "Modelo": "={{ $json.modelo }}",
+            "Caso": "={{ $json.caso }}",
+            "Tipo": "={{ $json.tipo }}",
+            "Intento": "={{ $json.intento }}",
+            "Pregunta": "={{ $json.pregunta }}",
+            "Respuesta_Agente": "={{ $json.respuesta_agente }}",
+            "Fragmentos_Contexto": "={{ $json.fragmentos_contexto }}",
+            "Exactitud_Factual": "={{ $json.exactitud_factual }}",
+            "Completitud": "={{ $json.completitud }}",
+            "Cita_Fuente": "={{ $json.cita_fuente ? 'SI' : 'NO' }}",
+            "Seguridad": "={{ $json.seguridad_pass ? 'PASS' : 'FAIL' }}",
+            "Categoria_Error": "={{ $json.categoria_error }}",
+            "Estado_Veredicto": "={{ $json.estado_veredicto }}",
+            "Critica": "={{ $json.critica }}",
+            "Correcto_GroundTruth": "={{ $json.correcto ? 'SI' : 'NO' }}",
+            "Tokens_Estimados": "={{ $json.tokens_total }}",
+            "Costo_USD": "={{ $json.costo_total_usd }}",
+            "Latencia_s": "={{ $json.latencia_total_s }}",
+            "HITL": "={{ $json.hitl ? 'SI' : 'NO' }}",
+            "Decision_Humana": "={{ $json.estado_veredicto === 'RECHAZADO' ? 'Pendiente (HITL)' : 'No requerida' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha",
+              "displayName": "Fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ejecucion",
+              "displayName": "Ejecucion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ID_Corrida",
+              "displayName": "ID_Corrida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Arquitectura",
+              "displayName": "Arquitectura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Modelo",
+              "displayName": "Modelo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Caso",
+              "displayName": "Caso",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tipo",
+              "displayName": "Tipo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Intento",
+              "displayName": "Intento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Pregunta",
+              "displayName": "Pregunta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Respuesta_Agente",
+              "displayName": "Respuesta_Agente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fragmentos_Contexto",
+              "displayName": "Fragmentos_Contexto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Exactitud_Factual",
+              "displayName": "Exactitud_Factual",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Completitud",
+              "displayName": "Completitud",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cita_Fuente",
+              "displayName": "Cita_Fuente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Seguridad",
+              "displayName": "Seguridad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Categoria_Error",
+              "displayName": "Categoria_Error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado_Veredicto",
+              "displayName": "Estado_Veredicto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Critica",
+              "displayName": "Critica",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Correcto_GroundTruth",
+              "displayName": "Correcto_GroundTruth",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tokens_Estimados",
+              "displayName": "Tokens_Estimados",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Costo_USD",
+              "displayName": "Costo_USD",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Latencia_s",
+              "displayName": "Latencia_s",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "HITL",
+              "displayName": "HITL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Decision_Humana",
+              "displayName": "Decision_Humana",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e07281a3-db7d-437c-96be-5c2435b77202",
+      "name": "Log veredicto del Juez (Sheets · QA_Veredictos)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2000,
+        -120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "xWnNSJ291dkSYLsz",
+          "name": "Google Sheets account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/1zOw74MyV4gXFPccSCNyCXYmwpLoV6oa95n_icCOKMEU/edit?gid=0#gid=0"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "QA_Veredictos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha": "={{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('yyyy-MM-dd HH:mm:ss') }}",
+            "Ejecucion": "={{ $execution.id }}",
+            "ID_Corrida": "={{ $json.id_corrida }}",
+            "Arquitectura": "={{ $json.arquitectura }}",
+            "Modelo": "={{ $json.modelo }}",
+            "Caso": "={{ $json.caso }}",
+            "Tipo": "={{ $json.tipo }}",
+            "Intento": "={{ $json.intento }}",
+            "Pregunta": "={{ $json.pregunta }}",
+            "Respuesta_Agente": "={{ $json.respuesta_agente }}",
+            "Fragmentos_Contexto": "={{ $json.fragmentos_contexto }}",
+            "Exactitud_Factual": "={{ $json.exactitud_factual }}",
+            "Completitud": "={{ $json.completitud }}",
+            "Cita_Fuente": "={{ $json.cita_fuente ? 'SI' : 'NO' }}",
+            "Seguridad": "={{ $json.seguridad_pass ? 'PASS' : 'FAIL' }}",
+            "Categoria_Error": "={{ $json.categoria_error }}",
+            "Estado_Veredicto": "={{ $json.estado_veredicto }} → decisión humana",
+            "Critica": "={{ $json.critica }}",
+            "Correcto_GroundTruth": "={{ $json.correcto ? 'SI' : 'NO' }}",
+            "Tokens_Estimados": "={{ $json.tokens_total }}",
+            "Costo_USD": "={{ $json.costo_total_usd }}",
+            "Latencia_s": "={{ $json.latencia_total_s }}",
+            "HITL": "={{ $json.hitl ? 'SI' : 'NO' }}",
+            "Decision_Humana": "={{ $json.decision_humana }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha",
+              "displayName": "Fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ejecucion",
+              "displayName": "Ejecucion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ID_Corrida",
+              "displayName": "ID_Corrida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Arquitectura",
+              "displayName": "Arquitectura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Modelo",
+              "displayName": "Modelo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Caso",
+              "displayName": "Caso",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tipo",
+              "displayName": "Tipo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Intento",
+              "displayName": "Intento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Pregunta",
+              "displayName": "Pregunta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Respuesta_Agente",
+              "displayName": "Respuesta_Agente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fragmentos_Contexto",
+              "displayName": "Fragmentos_Contexto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Exactitud_Factual",
+              "displayName": "Exactitud_Factual",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Completitud",
+              "displayName": "Completitud",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cita_Fuente",
+              "displayName": "Cita_Fuente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Seguridad",
+              "displayName": "Seguridad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Categoria_Error",
+              "displayName": "Categoria_Error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado_Veredicto",
+              "displayName": "Estado_Veredicto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Critica",
+              "displayName": "Critica",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Correcto_GroundTruth",
+              "displayName": "Correcto_GroundTruth",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tokens_Estimados",
+              "displayName": "Tokens_Estimados",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Costo_USD",
+              "displayName": "Costo_USD",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Latencia_s",
+              "displayName": "Latencia_s",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "HITL",
+              "displayName": "HITL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Decision_Humana",
+              "displayName": "Decision_Humana",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "330f2b8c-3bdf-4bc8-a851-56a0f037e410",
+      "name": "Log decisión humana (Sheets · QA_Veredictos)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3240,
+        700
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "xWnNSJ291dkSYLsz",
+          "name": "Google Sheets account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Iniciar test A/B (manual)": {
+      "main": [
+        [
+          {
+            "node": "Golden Dataset (5 casos × arquitecturas A/B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Golden Dataset (5 casos × arquitecturas A/B)": {
+      "main": [
+        [
+          {
+            "node": "Loop corridas A/B (1 a la vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop corridas A/B (1 a la vez)": {
+      "main": [
+        [
+          {
+            "node": "Dashboard A/B + proyección 1.000 ejecuciones",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar intento 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar intento 1": {
+      "main": [
+        [
+          {
+            "node": "Entrada al ejecutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada al ejecutor": {
+      "main": [
+        [
+          {
+            "node": "Agente Ejecutor Sowe (RAG · modelo según arquitectura)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (modelo A/B dinámico)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Ejecutor Sowe (RAG · modelo según arquitectura)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "buscar_manual_sowe": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente Ejecutor Sowe (RAG · modelo según arquitectura)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Ejecutor Sowe (RAG · modelo según arquitectura)": {
+      "main": [
+        [
+          {
+            "node": "Trazabilidad para el Juez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trazabilidad para el Juez": {
+      "main": [
+        [
+          {
+            "node": "Llamar SUPERVISOR_Judge (sub-workflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar SUPERVISOR_Judge (sub-workflow)": {
+      "main": [
+        [
+          {
+            "node": "Consolidar veredicto + métricas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar veredicto + métricas": {
+      "main": [
+        [
+          {
+            "node": "Log veredicto del Juez (Sheets · QA_Veredictos)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch veredicto (3 rutas)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch veredicto (3 rutas)": {
+      "main": [
+        [
+          {
+            "node": "ACEPTADO → Salida real (Slack #sowe-operaciones)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado del caso (aceptado)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Quedan reintentos? (máx. 2 correcciones)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RECHAZADO → HITL Slack (Aprobar / Editar · Wait)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Quedan reintentos? (máx. 2 correcciones)": {
+      "main": [
+        [
+          {
+            "node": "Preparar reintento (crítica del Juez → agente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RECHAZADO → HITL Slack (Aprobar / Editar · Wait)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar reintento (crítica del Juez → agente)": {
+      "main": [
+        [
+          {
+            "node": "Entrada al ejecutor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RECHAZADO → HITL Slack (Aprobar / Editar · Wait)": {
+      "main": [
+        [
+          {
+            "node": "Resultado del caso (decisión humana)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del caso (decisión humana)": {
+      "main": [
+        [
+          {
+            "node": "Log decisión humana (Sheets · QA_Veredictos)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop corridas A/B (1 a la vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del caso (aceptado)": {
+      "main": [
+        [
+          {
+            "node": "Loop corridas A/B (1 a la vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": []
+}
