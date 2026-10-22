@@ -1,0 +1,308 @@
+{
+  "name": "PF - Worker Despacho (HubSpot + Slack)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Proyecto Final · WORKER de Despacho\nSolo recibe respuestas **ya validadas** por el Supervisor (o aprobadas por un humano).\n1. **CRM:** HubSpot *Create or Update* por email → repetir no duplica contactos (idempotente). 3 reintentos; si falla, sigue y lo informa.\n2. **Canal externo:** Slack #sowe-operaciones con el `traceId`.\nDevuelve `crm_estado` y `despacho` al Manager.",
+        "height": 280,
+        "width": 480,
+        "color": 5
+      },
+      "id": "9ea743b7-0569-45f1-8a64-6cdd5f6a2e31",
+      "name": "Nota b57d",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "traceId",
+              "type": "string"
+            },
+            {
+              "name": "request_id",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            },
+            {
+              "name": "nombre",
+              "type": "string"
+            },
+            {
+              "name": "empresa",
+              "type": "string"
+            },
+            {
+              "name": "pregunta",
+              "type": "string"
+            },
+            {
+              "name": "respuesta",
+              "type": "string"
+            },
+            {
+              "name": "exactitud_factual",
+              "type": "string"
+            },
+            {
+              "name": "aprobado_por",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "be8d3778-03a7-445c-98a1-f60198ed6ac2",
+      "name": "Entrada del Worker (traceId + respuesta validada)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "89b3fe6b-5364-40e1-a19a-d8e403f98706",
+              "leftValue": "={{ /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String($json.email ?? '').trim()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f8c39b68-fd1b-4024-849c-af1a3dd2361a",
+      "name": "¿Email válido para el CRM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ String($json.email).trim().toLowerCase() }}",
+        "additionalFields": {
+          "firstName": "={{ $json.nombre }}",
+          "companyName": "={{ $json.empresa }}",
+          "lifeCycleStage": "lead"
+        },
+        "options": {}
+      },
+      "id": "87be90eb-57ba-4ce5-a9ff-c53e4a00eb56",
+      "name": "HubSpot - Crear o actualizar contacto (idempotente por email)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.1,
+      "position": [
+        460,
+        -100
+      ],
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "CWciJhQQzlEXqgdp",
+          "name": "HubSpot account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dc00f475-22d3-474d-af79-6629a5bd2b13",
+              "name": "crm_estado",
+              "value": "={{ $('HubSpot - Crear o actualizar contacto (idempotente por email)').isExecuted ? ($json.error ? 'ERROR_CRM (alertado)' : 'CONTACTO_CREADO_O_ACTUALIZADO') : 'SIN_EMAIL_VALIDO' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6219b239-ad4d-4103-b32a-cc9ed50b6132",
+      "name": "Estado del CRM",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#sowe-operaciones"
+        },
+        "text": "=✅ *Consulta respondida y validada* · traceId `{{ $('Entrada del Worker (traceId + respuesta validada)').item.json.traceId }}`\n*Cliente:* {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.nombre }} ({{ $('Entrada del Worker (traceId + respuesta validada)').item.json.empresa }}) · {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.email }}\n*Pregunta:* {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.pregunta }}\n*Respuesta entregada:* {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.respuesta }}\n*Supervisor:* exactitud {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.exactitud_factual }}/5 · aprobado por: {{ $('Entrada del Worker (traceId + respuesta validada)').item.json.aprobado_por }}\n*CRM:* {{ $json.crm_estado }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "4ffc3385-3835-4026-9db6-006ac7d3c725",
+      "name": "Slack - Respuesta validada a #sowe-operaciones",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        0
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "oVQFnkC4yIGBqI5Z",
+          "name": "Slack account 2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0afe38e-51ca-4d94-b16f-775560ca6c64",
+              "name": "traceId",
+              "value": "={{ $('Entrada del Worker (traceId + respuesta validada)').item.json.traceId }}",
+              "type": "string"
+            },
+            {
+              "id": "4ee16f2f-d422-4e52-aa79-ee480bc4a9b1",
+              "name": "crm_estado",
+              "value": "={{ $('Estado del CRM').item.json.crm_estado }}",
+              "type": "string"
+            },
+            {
+              "id": "ef426a75-517d-4697-b7aa-b8b3083a17e6",
+              "name": "despacho",
+              "value": "={{ $json.error ? 'ERROR_SLACK' : 'SLACK_OK' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2dce8003-c85a-4622-9a7c-abb395a65977",
+      "name": "Resultado del despacho",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada del Worker (traceId + respuesta validada)": {
+      "main": [
+        [
+          {
+            "node": "¿Email válido para el CRM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email válido para el CRM?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot - Crear o actualizar contacto (idempotente por email)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Estado del CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot - Crear o actualizar contacto (idempotente por email)": {
+      "main": [
+        [
+          {
+            "node": "Estado del CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Estado del CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Estado del CRM": {
+      "main": [
+        [
+          {
+            "node": "Slack - Respuesta validada a #sowe-operaciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Respuesta validada a #sowe-operaciones": {
+      "main": [
+        [
+          {
+            "node": "Resultado del despacho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": []
+}
